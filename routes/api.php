@@ -6,7 +6,18 @@ use App\Http\Controllers\Api\Auth\AuthController;
 use App\Http\Controllers\Api\Auth\AdminApprovalController;
 
 
-Route::prefix('v1/api')->group(function () {
+Route::prefix('v1')->group(function () {
+    Route::prefix('auth')->group(function () {
+        Route::post('/registrasi', [AuthController::class, 'register']);
+        Route::get('/verify-email/{token}', [AuthController::class, 'verifyEmail']);
+        Route::get('/admin/approve/{token}', [AdminApprovalController::class, 'aprovedAdmin']);
+        Route::post('/login', [AuthController::class , 'login']);
+
+        Route::middleware('auth:sanctum')->group(function () {
+            Route::post('/logout', [AuthController::class, 'logout']);
+        });
+    });
+
     Route::get('/ping', function () {
         return response()->json([
             'status' => 'ok',
@@ -14,12 +25,8 @@ Route::prefix('v1/api')->group(function () {
             'timestamp' => now(),
         ]);
     });
-
-    Route::post('/auth/registrasi', [AuthController::class, 'register']);
-    Route::get('/auth/verify-email/{token}', [AuthController::class, 'verifyEmail']);
-    Route::get('/auth/admin/approve/{token}', [AdminApprovalController::class, 'aprovedAdmin']);
-
 });
+
 
 
 
