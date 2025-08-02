@@ -13,9 +13,11 @@ Route::prefix('v1')->group(function () {
         Route::get('/admin/approve/{token}', [AdminApprovalController::class, 'aprovedAdmin']);
         Route::post('/login', [AuthController::class , 'login']);
 
-        Route::middleware('auth:sanctum')->group(function () {
+        Route::middleware(['auth:sanctum', 'auth.api'])->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
+            Route::post('/change-password', [AuthController::class, 'changePassword']);
         });
+
     });
 
     Route::get('/ping', function () {
