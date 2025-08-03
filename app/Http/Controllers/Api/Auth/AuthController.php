@@ -4,10 +4,12 @@ namespace App\Http\Controllers\Api\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\PasswordOtp;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -252,6 +254,116 @@ class AuthController extends Controller
             'message' => 'Password berhasil diubah.'
         ]);
     }
+
+    public function requestOtp(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email_or_phone' => 'required|string',
+            'method' => 'required|in:email,whatsapp',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
+        $user = $request->user();
+
+        // ✅ Hanya boleh akses OTP untuk dirinya sendiri
+        if ($data['email_or_phone'] !== $user->email && $data['email_or_phone'] !== $user->phone_number) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Anda hanya bisa mengirim OTP ke akun milik Anda sendiri.'
+            ], 403);
+        }
+
+        // ✅ Validasi: email harus pakai method email, phone harus pakai method whatsapp
+        $isEmail = filter_var($data['email_or_phone'], FILTER_VALIDATE_EMAIL);
+        if ($isEmail && $data['method'] !== 'email') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jika menggunakan email, method harus email.'
+            ], 422);
+        }
+
+        if (!$isEmail && $data['method'] !== 'whatsapp') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Jika menggunakan nomor telepon, method harus whatsapp.'
+            ], 422);
+        }
+
+        // ✅ Cek OTP aktif
+        $now = now();
+        $existingOtp = PasswordOtp::where('email_or_phone', $data['email_or_phone'])
+            ->where('method', $data['method'])
+            ->where('used', false)
+            ->where('expires_at', '>', $now)
+            ->first();
+
+        if ($existingOtp) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kode OTP masih aktif. Silakan tunggu hingga kadaluarsa.'
+            ], 429);
+        }
+
+        // ✅ Generate dan simpan OTP
+        $otp = random_int(100000, 999999);
+
+        PasswordOtp::create([
+            'email_or_phone' => $data['email_or_phone'],
+            'otp_code' => $otp,
+            'method' => $data['method'],
+            'expires_at' => $now->addSeconds(60),
+        ]);
+
+        // ✅ Kirim OTP
+        // OTP ini itu trial yang via WA, jadi kemungkinan harus berubah nanti
+        // seperti scretnya, api keynya, yangdi env, hanya buat akun, terus masukin api key sama scretnya saja nanti dan login device
+        if ($data['method'] === 'email') {
+            Mail::raw("Kode OTP Anda adalah: {$otp}", function ($message) use ($data) {
+                $message->to($data['email_or_phone'])
+                        ->subject('Kode OTP Reset Password');
+            });
+        } else {
+            $phone = preg_replace('/[^0-9]/', '', $data['email_or_phone']); // pastikan format bersih
+
+            $response = Http::withHeaders([
+                'Authorization' => config('services.wablas.api_key'),
+            ])->post('https://sby.wablas.com/api/v2/send-message', [
+                'data' => [[
+                    'phone' => $phone,
+                    'message' => "Kode OTP Anda adalah: {$otp}",
+                    'secret' => config('services.wablas.secret'),
+                    'priority' => true,
+                ]]
+            ]);
+
+
+            if ($response->failed()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengirim OTP ke WhatsApp.',
+                    'wablas_response' => $response->body()
+                ], 500);
+            }
+        }
+
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Kode OTP berhasil dikirim.'
+        ]);
+    }
+
+
+
+
 
 
 

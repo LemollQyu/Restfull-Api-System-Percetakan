@@ -35,4 +35,10 @@ return [
         ],
     ],
 
+    'wablas' => [
+        'api_key' => env('WABLAS_API_KEY'),
+        'secret' => env('WABLAS_SECRET'),
+    ],
+
+
 ];
