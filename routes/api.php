@@ -17,7 +17,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/logout', [AuthController::class, 'logout']);
             Route::post('/change-password', [AuthController::class, 'changePassword']);
             Route::post('/request-otp', [AuthController::class, 'requestOtp']);
-
+            Route::post('/verify-otp', [AuthController::class, 'verifyOtp']);
         });
 
     });
