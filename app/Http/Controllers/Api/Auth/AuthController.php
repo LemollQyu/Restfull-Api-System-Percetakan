@@ -362,57 +362,113 @@ class AuthController extends Controller
     }
 
     public function verifyOtp(Request $request)
-{
-    $validator = Validator::make($request->all(), [
-        'email_or_phone' => 'required|string',
-        'otp_code'       => 'required|string',
-    ]);
+    {
+        $validator = Validator::make($request->all(), [
+            'email_or_phone' => 'required|string',
+            'otp_code'       => 'required|string',
+        ]);
 
-    if ($validator->fails()) {
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'code' => 422,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
+
+        // Ambil OTP berdasarkan email_or_phone dan kode
+        $otp = PasswordOtp::where('email_or_phone', $data['email_or_phone'])
+            ->where('otp_code', $data['otp_code'])
+            ->where('used', false)
+            ->first();
+
+        if (!$otp) {
+            return response()->json([
+                'success' => false,
+                'code' => 404,
+                'message' => 'Kode OTP tidak valid atau sudah digunakan.'
+            ], 404);
+        }
+
+        // Cek apakah sudah expired
+        if (now()->greaterThan($otp->expires_at)) {
+            return response()->json([
+                'success' => false,
+                'code' => 410,
+                'message' => 'Kode OTP sudah kedaluwarsa.'
+            ], 410); // 410 Gone
+        }
+
+        // Tandai OTP sudah dipakai
+        $otp->used = true;
+        $otp->verified_at = now();
+        $otp->save();
+
         return response()->json([
-            'success' => false,
-            'code' => 422,
-            'message' => 'Validasi gagal',
-            'errors' => $validator->errors(),
-        ], 422);
+            'success' => true,
+            'code' => 200,
+            'message' => 'OTP berhasil diverifikasi.'
+        ]);
     }
 
-    $data = $validator->validated();
+    public function resetPassword(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'email_or_phone'   => 'required|string',
+            'otp_code'         => 'required|string',
+            'new_password'     => 'required|string|min:6',
+            'confirm_password' => 'required|string|same:new_password',
+        ]);
 
-    // Ambil OTP berdasarkan email_or_phone dan kode
-    $otp = PasswordOtp::where('email_or_phone', $data['email_or_phone'])
-        ->where('otp_code', $data['otp_code'])
-        ->where('used', false)
-        ->first();
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
 
-    if (!$otp) {
+        $data = $validator->validated();
+
+        // ✅ Ambil OTP yang sudah diverifikasi
+        $otp = PasswordOtp::where('email_or_phone', $data['email_or_phone'])
+            ->where('otp_code', $data['otp_code'])
+            ->whereNotNull('verified_at') // ✅ hanya yang sudah diverifikasi
+            ->first();
+
+        if (!$otp) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kode OTP tidak ditemukan atau belum diverifikasi.'
+            ], 404);
+        }
+
+        // Cari user
+        $user = User::where('email', $data['email_or_phone'])
+                    ->orWhere('phone_number', $data['email_or_phone'])
+                    ->first();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pengguna tidak ditemukan.'
+            ], 404);
+        }
+
+        // Ganti password user
+        $user->password = Hash::make($data['new_password']);
+        $user->save();
+
         return response()->json([
-            'success' => false,
-            'code' => 404,
-            'message' => 'Kode OTP tidak valid atau sudah digunakan.'
-        ], 404);
+            'success' => true,
+            'message' => 'Password berhasil diubah. Silakan login kembali.'
+        ]);
     }
 
-    // Cek apakah sudah expired
-    if (now()->greaterThan($otp->expires_at)) {
-        return response()->json([
-            'success' => false,
-            'code' => 410,
-            'message' => 'Kode OTP sudah kedaluwarsa.'
-        ], 410); // 410 Gone
-    }
 
-    // Tandai OTP sudah dipakai
-    $otp->used = true;
-    $otp->verified_at = now();
-    $otp->save();
-
-    return response()->json([
-        'success' => true,
-        'code' => 200,
-        'message' => 'OTP berhasil diverifikasi.'
-    ]);
-}
 
 
 
